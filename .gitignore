@@ -137,3 +137,13 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Project-specific entries
+backend/node_modules
+backend/package-lock.json
+frontend/node_modules
+frontend/dist
+frontend/package-lock.json
+backend/.env
+frontend/.env
+package-lock.json
