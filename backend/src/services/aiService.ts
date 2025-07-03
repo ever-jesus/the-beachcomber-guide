@@ -97,40 +97,24 @@ export async function getGeminiRecommendations(profile: UserProfile): Promise<Re
             {
               "title": "AWS Certified Solutions Architect - Associate 2024 by Stephane Maarek",
               "link": "https://www.udemy.com/course/aws-certified-solutions-architect-associate/"
-            },
-            {
-              "title": "AWS Cloud Practitioner Essentials by AWS Training",
-              "link": "https://www.udemy.com/course/aws-cloud-practitioner-essentials/"
             }
           ],
           "youtubeVideos": [
             {
               "title": "AWS Architecture Best Practices by AWS",
               "link": "https://www.youtube.com/watch?v=example1"
-            },
-            {
-              "title": "Microservices on AWS by Tech With Tim",
-              "link": "https://www.youtube.com/watch?v=example2"
             }
           ],
           "books": [
             {
               "title": "AWS Well-Architected Framework by AWS",
               "link": "https://www.amazon.com/AWS-Well-Architected-Framework-Cloud-Architecture/dp/0137947134/"
-            },
-            {
-              "title": "Cloud Architecture Patterns by Martin Fowler",
-              "link": "https://www.amazon.com/Cloud-Native-Patterns-Martin-Fowler/dp/1617294296/"
             }
           ],
           "papers": [
             {
               "title": "The Twelve-Factor App Methodology",
               "link": "https://12factor.net/"
-            },
-            {
-              "title": "Microservices Architecture Patterns by Chris Richardson",
-              "link": "https://microservices.io/patterns/"
             }
           ]
         }
@@ -147,40 +131,24 @@ export async function getGeminiRecommendations(profile: UserProfile): Promise<Re
             {
               "title": "Consulting Skills Masterclass by Management Consulted",
               "link": "https://www.udemy.com/course/consulting-skills-masterclass/"
-            },
-            {
-              "title": "Leadership in Tech by Harvard Business School",
-              "link": "https://www.udemy.com/course/leadership-in-tech/"
             }
           ],
           "youtubeVideos": [
             {
               "title": "Consulting Case Interview Prep by McKinsey",
               "link": "https://www.youtube.com/watch?v=example3"
-            },
-            {
-              "title": "Leadership Communication by Simon Sinek",
-              "link": "https://www.youtube.com/watch?v=example4"
             }
           ],
           "books": [
             {
               "title": "The McKinsey Way by Ethan M. Rasiel",
               "link": "https://www.amazon.com/McKinsey-Way-Ethan-M-Rasiel/dp/0070534489/"
-            },
-            {
-              "title": "The Trusted Advisor by David H. Maister",
-              "link": "https://www.amazon.com/Trusted-Advisor-David-H-Maister/dp/0743212347/"
             }
           ],
           "papers": [
             {
               "title": "The Future of Management Consulting by HBR",
               "link": "https://hbr.org/2020/01/the-future-of-management-consulting"
-            },
-            {
-              "title": "Digital Transformation Framework by MIT Sloan",
-              "link": "https://sloanreview.mit.edu/article/the-digital-transformation-playbook/"
             }
           ]
         }
@@ -194,24 +162,161 @@ export async function getGeminiRecommendations(profile: UserProfile): Promise<Re
     - For books, use Amazon.com URLs (preferably with ISBN numbers)
     - For papers, use direct links to PDFs or web pages where the content is freely available
     - Make sure all links are real and accessible
+    - Return ONLY valid JSON - no additional text, explanations, or markdown formatting
+    - Ensure all JSON strings are properly escaped
+    - Do not include any text before or after the JSON array
   `;
 
+  let result: any;
+  let response: any;
+  let text: string = '';
+  
   try {
-    const result = await model.generateContent(prompt);
-    const response = result.response;
-    const text = response.text();
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('API request timeout')), 30000); // 30 second timeout
+    });
+    
+    result = await Promise.race([
+      model.generateContent(prompt),
+      timeoutPromise
+    ]) as any;
+    response = result.response;
+    text = response.text();
+
+    console.log('Raw Gemini response:', text);
+
+    if (!text || text.trim() === '') {
+      console.error('Empty response from Gemini API');
+      return [];
+    }
 
     // Attempt to parse the JSON. Gemini might wrap it in markdown.
     let jsonString = text.replace(/```json\n/g, '').replace(/\n```/g, '');
+    
+    // Try to find JSON content if it's wrapped in other text
+    const jsonMatch = jsonString.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      jsonString = jsonMatch[0];
+    }
+
+    // Clean up any potential formatting issues
+    jsonString = jsonString.trim();
+    
+    // Remove any leading/trailing text that's not JSON
+    const startBracket = jsonString.indexOf('[');
+    const endBracket = jsonString.lastIndexOf(']');
+    if (startBracket !== -1 && endBracket !== -1 && endBracket > startBracket) {
+      jsonString = jsonString.substring(startBracket, endBracket + 1);
+    }
+
+    console.log('Attempting to parse JSON:', jsonString);
+    
     const recommendations: Recommendation[] = JSON.parse(jsonString);
     return recommendations;
 
   } catch (error) {
     console.error('Error calling Gemini API:', error);
-    // Attempt to parse if it's a JSON error or return empty array
-    if (error instanceof SyntaxError) {
-        console.error("Failed to parse JSON from Gemini. Raw text:", (error as any).rawText);
+    
+    // Handle different types of errors
+    if (error instanceof SyntaxError && text) {
+      console.error("JSON parse error details:", error.message);
+      console.error("Full response text:", text);
+      
+      // Try to extract any JSON-like content from the response
+      try {
+        // Look for JSON array pattern
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          console.log("Found potential JSON content:", jsonMatch[0]);
+          const recommendations: Recommendation[] = JSON.parse(jsonMatch[0]);
+          return recommendations;
+        }
+      } catch (extractError) {
+        console.error("Failed to extract JSON from response:", extractError);
+      }
+    } else if (error instanceof Error) {
+      console.error("API Error:", error.message);
+      console.error("Error stack:", error.stack);
     }
-    return []; // Return empty array on error
+    
+    console.log('Using fallback recommendations due to API error');
+    return getFallbackRecommendations(profile);
   }
+}
+
+// Fallback recommendations when AI service fails
+function getFallbackRecommendations(profile: UserProfile): Recommendation[] {
+  const { meNow, meNext } = profile;
+  
+  return [
+    {
+      goal: "Enhance current technical skills and stay updated with industry trends",
+      activities: [
+        "Complete online courses in your current technology stack",
+        "Participate in internal knowledge sharing sessions",
+        "Contribute to open source projects or internal tools"
+      ],
+      learningResources: {
+        udemyCourses: [
+          {
+            title: "Modern JavaScript: Complete Course by Jonas Schmedtmann",
+            link: "https://www.udemy.com/course/javascript-beginners-complete-tutorial/"
+          }
+        ],
+        youtubeVideos: [
+          {
+            title: "Software Engineering Best Practices by Fireship",
+            link: "https://www.youtube.com/watch?v=0Kqzfyp-w4s"
+          }
+        ],
+        books: [
+          {
+            title: "Clean Code by Robert C. Martin",
+            link: "https://www.amazon.com/Clean-Code-Handbook-Software-Craftsmanship/dp/0132350884/"
+          }
+        ],
+        papers: [
+          {
+            title: "The Twelve-Factor App Methodology",
+            link: "https://12factor.net/"
+          }
+        ]
+      }
+    },
+    {
+      goal: "Develop consulting and communication skills",
+      activities: [
+        "Practice presenting technical concepts to non-technical audiences",
+        "Participate in client proposal development",
+        "Mentor junior team members"
+      ],
+      learningResources: {
+        udemyCourses: [
+          {
+            title: "Public Speaking and Presentation Skills by TJ Walker",
+            link: "https://www.udemy.com/course/public-speaking-and-presentation-skills/"
+          }
+        ],
+        youtubeVideos: [
+          {
+            title: "How to Present Technical Information by Simon Brown",
+            link: "https://www.youtube.com/watch?v=8jLOx1hD3_o"
+          }
+        ],
+        books: [
+          {
+            title: "The McKinsey Way by Ethan M. Rasiel",
+            link: "https://www.amazon.com/McKinsey-Way-Ethan-M-Rasiel/dp/0070534489/"
+          }
+        ],
+        papers: [
+          {
+            title: "Effective Technical Communication",
+            link: "https://ieeexplore.ieee.org/document/1234567"
+          }
+        ]
+      }
+    }
+  ];
 } 
