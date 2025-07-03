@@ -9,6 +9,7 @@ initializeFirebaseAdmin();
 import profileRoutes from './routes/profileRoutes';
 import recommendationRoutes from './routes/recommendationRoutes';
 import activityRoutes from './routes/activityRoutes';
+import pdfImportRoutes from './routes/pdfImportRoutes';
 
 const app = express();
 
@@ -25,5 +26,6 @@ app.get('/', (req, res) => {
 app.use('/api/profile', profileRoutes);
 app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/activities', activityRoutes);
+app.use('/api/pdf-import', pdfImportRoutes);
 
 export default app; 
